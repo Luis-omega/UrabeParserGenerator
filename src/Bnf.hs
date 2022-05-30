@@ -2,69 +2,74 @@
 {-# LANGUAGE GADTs #-}
 
 module Bnf (
-  VariableName,
+  Identifier,
   fromString,
-  LanguageString (Variable, Concatenate),
-  SingleProduction (SingleProduction),
+  LanguageString (LanguageString),
   Production (Production, name, rules),
   getProduction,
+  addProduction,
 ) where
 
 import Data.Char (isDigit)
-import Data.List.NonEmpty (NonEmpty)
-import Data.List.NonEmpty qualified as NonEmpty
+import Data.List.NonEmpty qualified as List.NonEmpty
 import Data.Map qualified as Map
+import Data.Set.NonEmpty (NESet)
 
-newtype VariableName = VariableName {unVariablename :: String}
+newtype Identifier = Identifier String
   deriving stock (Eq, Ord)
 
-instance Show VariableName where
-  show (VariableName s) = s
+instance Show Identifier where
+  show (Identifier s) = s
 
-fromString :: String -> Maybe VariableName
+data Name
+  = RawName Identifier
+  | PlusName Int Name
+  | StarName Int Name
+  | OptionName Int Name
+  | FunctionName Int Identifier (List.NonEmpty.NonEmpty Identifier)
+  deriving stock (Eq)
+
+instance Show Name where
+  show (RawName name) = show name
+  show (PlusName n name) = "_" <> show n <> "Plus_" <> show name
+  show (StarName n name) = "_" <> show n <> "Star_" <> show name
+  show (OptionName n name) = "_" <> show n <> "Option_" <> show name
+  show (FunctionName n name args) =
+    "_" <> show n <> "Function_" <> show name <> show args
+
+instance Ord Name where
+  a <= b = show a <= show b
+
+fromString :: String -> Maybe Identifier
 fromString str =
   case str of
     (x : _) ->
       if x == '_' || isDigit x
         then Nothing
-        else Just $ VariableName str
+        else Just $ Identifier str
     _ -> Nothing
 
-data LanguageString where
-  Variable :: VariableName -> LanguageString
-  Concatenate :: LanguageString -> LanguageString -> LanguageString
-  deriving stock (Eq)
-
-data SingleProduction
-  = SingleProduction VariableName LanguageString
-  deriving stock (Eq)
+newtype LanguageString = LanguageString (List.NonEmpty.NonEmpty Name)
+  deriving stock (Eq, Ord, Show)
 
 data Production = Production
-  { name :: VariableName
-  , rules :: NonEmpty LanguageString
+  { name :: Name
+  , rules :: NESet LanguageString
   }
-  deriving stock (Eq)
 
-newtype Grammar = Grammar (Map.Map VariableName (NonEmpty LanguageString))
+newtype Grammar = Grammar (Map.Map Name (NESet LanguageString))
 
-getProduction :: Grammar -> String -> Maybe Production
+getProduction :: Grammar -> Name -> Maybe Production
 getProduction (Grammar grammar) name =
-  let ruleName = VariableName name
-   in Production ruleName <$> Map.lookup ruleName grammar
-
-mergeRules ::
-  NonEmpty LanguageString ->
-  NonEmpty LanguageString ->
-  NonEmpty LanguageString
-mergeRules r1 r2 =
-  NonEmpty.nub (r1 <> r2)
+  Production name <$> Map.lookup name grammar
 
 addProduction :: Production -> Grammar -> Grammar
-addProduction Production{} g@(Grammar grammar) =
-  case getProduction g (unVariablename name) of
+addProduction prod@Production{name} wrappedGrammar@(Grammar grammar) =
+  case getProduction wrappedGrammar name of
     Just value ->
-      let newRules = mergeRules value.rules rules
-       in 
-        Map.insert name value{rules=newRules}
-    _ -> 
-        Map.insert name value{rules=newRules}
+      let newRules = (rules prod <> rules value)
+          innerGrammar :: Map.Map Name (NESet LanguageString)
+          innerGrammar = Map.insert name newRules grammar
+       in Grammar innerGrammar
+    _ ->
+      Grammar $ Map.insert name (rules prod) grammar

@@ -56,6 +56,7 @@ common common-language
     TypeFamilies
     TypeOperators
     TypeSynonymInstances
+    NamedFieldPuns
 
 common common-options
   ghc-options:
@@ -69,8 +70,11 @@ library
   build-depends:
     base
     ,text
+    ,containers
+    ,record-dot-preprocessor
+    ,nonempty-containers
   exposed-modules:
-    Lib
+    Bnf
 
 extra-source-files: CHANGELOG.md
 
